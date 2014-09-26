@@ -3,10 +3,11 @@
  * Diff to HTML (diff2html.js)
  * Author: rtfpessoa
  * Date: Friday 29 August 2014
- * Last Update: Sunday 14 September 2014
+ * Last Update: Friday 26 September 2014
  *
- * Diff command:
- *   git diff --word-diff-regex=. HEAD~1
+ * Diff commands:
+ *   git diff
+ *   git diff --word-diff
  */
 
 (function (window) {
@@ -33,16 +34,16 @@
         /*
          * Generates pretty html from string diff input
          */
-        Diff2Html.prototype.getPrettyHtmlFromDiff = function (diffInput) {
-            var diffJson = generateDiffJson(diffInput);
+        Diff2Html.prototype.getPrettyHtmlFromDiff = function (lineDiffInput, wordDiffInput) {
+            var diffJson = generateDiffJson(lineDiffInput, wordDiffInput);
             return generateJsonHtml(diffJson);
         };
 
         /*
          * Generates json object from string diff input
          */
-        Diff2Html.prototype.getJsonFromDiff = function (diffInput) {
-            return generateDiffJson(diffInput);
+        Diff2Html.prototype.getJsonFromDiff = function (lineDiffInput, wordDiffInput) {
+            return generateDiffJson(lineDiffInput, wordDiffInput);
         };
 
         /*
@@ -55,8 +56,8 @@
         /*
          * Generates pretty side by side html from string diff input
          */
-        Diff2Html.prototype.getPrettySideBySideHtmlFromDiff = function (diffInput) {
-            var diffJson = generateDiffJson(diffInput);
+        Diff2Html.prototype.getPrettySideBySideHtmlFromDiff = function (lineDiffInput, wordDiffInput) {
+            var diffJson = generateDiffJson(lineDiffInput, wordDiffInput);
             return generateSideBySideJsonHtml(diffJson);
         };
 
@@ -67,12 +68,20 @@
             return generateSideBySideJsonHtml(diffJson);
         };
 
-        var generateDiffJson = function (diffInput) {
+        var generateDiffJson = function (lineDiffInput, wordDiffInput) {
+            /*
+             * File, block and line temp vars
+             */
+
             var files = [],
                 currentFile = null,
                 currentBlock = null,
                 oldLine = null,
                 newLine = null;
+
+            /*
+             * File, block and line function creation utils
+             */
 
             var saveBlock = function () {
                 /* add previous block(if exists) before start a new file */
@@ -124,6 +133,41 @@
                 currentBlock.oldStartLine = oldLine;
                 currentBlock.newStartLine = newLine;
                 currentBlock.header = line;
+            };
+
+            var createEmptyNewLine = function () {
+                currentFile.addedLines++;
+
+                var currentLine = {};
+                currentLine.content = "";
+                currentLine.type = LINE_TYPE.ALL_NEW;
+                currentLine.oldNumber = null;
+                currentLine.newNumber = newLine++;
+
+                currentBlock.lines.push(currentLine);
+            };
+
+            var createEmptyDeletedLine = function () {
+                currentFile.deletedLines++;
+
+                var currentLine = {};
+                currentLine.content = "";
+                currentLine.type = LINE_TYPE.ALL_DELETED;
+                currentLine.oldNumber = oldLine++;
+                currentLine.newNumber = null;
+
+                currentBlock.lines.push(currentLine);
+            };
+
+            var createContextLine = function (line) {
+
+                var currentLine = {};
+                currentLine.content = line;
+                currentLine.type = LINE_TYPE.CONTEXT;
+                currentLine.oldNumber = oldLine++;
+                currentLine.newNumber = newLine++;
+
+                currentBlock.lines.push(currentLine);
             };
 
             var createLine = function (line) {
@@ -198,18 +242,44 @@
                 }
             };
 
-            var diffLines = diffInput.split("\n");
-            diffLines.forEach(function (line) {
+            /*
+             * The Diff creation loop
+             */
+
+            var lineDiffLines = lineDiffInput.split("\n");
+            var wordDiffLines = wordDiffInput.split("\n");
+
+            var emptyLines = [];
+            lineDiffLines.forEach(function (line) {
+                var trimmedLine = line.trim();
+                if (!trimmedLine || trimmedLine == "-" || trimmedLine == "+") {
+                    emptyLines.push(line);
+                }
+            });
+            emptyLines.reverse();
+
+            wordDiffLines.forEach(function (line) {
                 // Unmerged paths, and possibly other non-diffable files
                 // https://github.com/scottgonzalez/pretty-diff/issues/11
                 // Also, remove some useless lines
-                if (!line || startsWith(line, "*") ||
+                if (startsWith(line, "*") ||
                     startsWith(line, "new") || startsWith(line, "index") ||
                     startsWith(line, "---") || startsWith(line, "+++")) {
                     return;
                 }
 
-                if (startsWith(line, "diff")) {
+                if (!line) {
+                    var lineDiffLine = emptyLines.pop();
+                    if (!lineDiffLine) {
+                        createContextLine("");
+                    } else if (startsWith(lineDiffLine, "+")) {
+                        createEmptyNewLine();
+                    } else if (startsWith(lineDiffLine, "-")) {
+                        createEmptyDeletedLine();
+                    } else {
+                        createContextLine(lineDiffLine);
+                    }
+                } else if (startsWith(line, "diff")) {
                     startFile(line);
                 } else if (currentFile && startsWith(line, "@@")) {
                     startBlock(line);
